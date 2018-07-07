@@ -1,75 +1,97 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Jul  7 11:05:39 2018
+
+@author: wstro
+"""
+
+from PIL import ImageTk, Image, ImageDraw
+import PIL
 from tkinter import *
-import tkinter.font
+import os, sys
 
-
-class PaintApp:
-    # Stores current drawing tool used
-    drawing_tool = "pencil"
-
-    # Tracks whether left mouse is down
-    left_but = "up"
-
-    # x and y positions for drawing with pencil
-    x_pos, y_pos = None, None
-
-    # Tracks x & y when the mouse is clicked and released
-    x1_line_pt, y1_line_pt, x2_line_pt, y2_line_pt = None, None, None, None
-
-    # ---------- CATCH MOUSE UP ----------
-
-    def left_but_down(self, event=None):
-        self.left_but = "down"
-
-        # Set x & y when mouse is clicked
-        self.x1_line_pt = event.x
-        self.y1_line_pt = event.y
-
-    # ---------- CATCH MOUSE UP ----------
-
-    def left_but_up(self, event=None):
-        self.left_but = "up"
-
-        # Reset the line
-        self.x_pos = None
-        self.y_pos = None
-
-        # Set x & y when mouse is released
-        self.x2_line_pt = event.x
-        self.y2_line_pt = event.y
+import tensorflow as tf
 
 
 
-    # ---------- CATCH MOUSE MOVEMENT ----------
+width = 500
+height = 500
+center = height//2
+white = (255, 255, 255)
+green = (0,128,0)
 
-    def motion(self, event=None):
+def tensor(nome):
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-        if self.drawing_tool == "pencil":
-            self.pencil_draw(event)
+# change this as you see fit
+    #image_path = sys.argv[1]
+    
+    # Read in the image_data
+    image_data = tf.gfile.FastGFile(nome, 'rb').read()
+    
+    # Loads label file, strips off carriage return
+    label_lines = [line.rstrip() for line 
+                       in tf.gfile.GFile("retrained_labels.txt")]
+    
+    # Unpersists graph from file
+    with tf.gfile.FastGFile("retrained_graph.pb", 'rb') as f:
+        graph_def = tf.GraphDef()
+        graph_def.ParseFromString(f.read())
+        tf.import_graph_def(graph_def, name='')
+    
+    with tf.Session() as sess:
+        # Feed the image_data as input to the graph and get first prediction
+        softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
+        
+        predictions = sess.run(softmax_tensor, \
+                 {'DecodeJpeg/contents:0': image_data})
+        
+        # Sort to show labels of first prediction in order of confidence
+        top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
+        
+        for node_id in top_k:
+            human_string = label_lines[node_id]
+            score = predictions[0][node_id]
+            print('%s (score = %.5f)' % (human_string, score))
+            
+ 
+def save():
+    filename = "image.jpg"
+    image1.save(filename)
+    tensor(filename)
+   
+    
 
-    # ---------- DRAW PENCIL ----------
-
-    def pencil_draw(self, event=None):
-        if self.left_but == "down":
-
-            # Make sure x and y have a value
-            if self.x_pos is not None and self.y_pos is not None:
-                event.widget.create_line(self.x_pos, self.y_pos, event.x, event.y, smooth=TRUE, width=5)
-
-            self.x_pos = event.x
-            self.y_pos = event.y
-
-
-
-    def __init__(self, root):
-        drawing_area = Canvas(root)
-        drawing_area.pack()
-        drawing_area.bind("<Motion>", self.motion)
-        drawing_area.bind("<ButtonPress-1>", self.left_but_down)
-        drawing_area.bind("<ButtonRelease-1>", self.left_but_up)
-
+def paint(event):
+    # python_green = "#476042"
+    x1, y1 = (event.x - 1), (event.y - 1)
+    x2, y2 = (event.x + 1), (event.y + 1)
+    cv.create_oval(x1, y1, x2, y2, fill="black",width=5)
+    draw.line([x1, y1, x2, y2],fill="black",width=5)
 
 root = Tk()
 
-paint_app = PaintApp(root)
+# Tkinter create a canvas to draw on
+cv = Canvas(root, width=width, height=height, bg='white')
+cv.pack()
 
+# PIL create an empty image and draw object to draw on
+# memory only, not visible
+image1 = PIL.Image.new("RGB", (width, height), white)
+draw = ImageDraw.Draw(image1)
+
+# do the Tkinter canvas drawings (visible)
+# cv.create_line([0, center, width, center], fill='green')
+
+cv.pack(expand=YES, fill=BOTH)
+cv.bind("<B1-Motion>", paint)
+
+# do the PIL image/draw (in memory) drawings
+# draw.line([0, center, width, center], green)
+
+# PIL image can be saved as .png .jpg .gif or .bmp file (among others)
+#filename = "my_drawing.png"
+#image1.save(filename)
+button=Button(text="save",command=save)
+button.pack()
 root.mainloop()
